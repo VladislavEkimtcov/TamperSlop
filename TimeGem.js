@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      0.1.0
 // @description  Local Gemini timing and token throughput estimate.
-// @author       NCSA
+// @author       Null
 // @match        https://gemini.google.com/app*
 // @match        https://gemini.google.com/*
 // @grant        none
@@ -102,12 +102,32 @@
 		return value.toFixed(2);
 	}
 
+	function calculateThinkResponse(firstTokenMs, totalMs) {
+		let thinkPct = 0;
+		let outputPct = 0;
+		if (totalMs > 0) {
+			thinkPct = Math.round((firstTokenMs / totalMs) * 100);
+			thinkPct = Math.max(0, Math.min(100, thinkPct));
+			outputPct = 100 - thinkPct;
+		}
+
+		return { thinkPct, outputPct };
+	}
+
+	function formatThinkResponse(result) {
+		if (!result) {
+			return '0%/0%';
+		}
+
+		return `${result.thinkPct}%/${result.outputPct}%`;
+	}
+
 	function buildStatsText(result) {
 		if (!result) {
 			return '';
 		}
 
-		return `${result.responseTokens} tok, ${formatRate(result.tokensPerSecond)} tok/s, ${formatDuration(result.totalMs)} tot, ${formatDuration(result.firstTokenMs)} ttft`;
+		return `${result.responseTokens} tok, ${formatRate(result.tokensPerSecond)} tok/s, ${formatDuration(result.totalMs)} tot, ${formatDuration(result.firstTokenMs)} ttft, ${result.thinkPct}/${result.outputPct} t/r`;
 	}
 
 	function getComposer() {
@@ -474,7 +494,8 @@
 				['Response tokens', 'responseTokens', '0'],
 				['TTFT', 'firstToken', '0.00s'],
 				['Total time', 'totalTime', '0.00s'],
-				['Tokens / sec', 'tokensPerSecond', '0.00']
+				['Tokens / sec', 'tokensPerSecond', '0.00'],
+				['Think/Response', 'thinkResponse', '0%/0%']
 			]) {
 				const tableRow = document.createElement('tr');
 
@@ -498,7 +519,8 @@
 				responseTokens: panel.querySelector('[data-row="responseTokens"]'),
 				firstToken: panel.querySelector('[data-row="firstToken"]'),
 				totalTime: panel.querySelector('[data-row="totalTime"]'),
-				tokensPerSecond: panel.querySelector('[data-row="tokensPerSecond"]')
+				tokensPerSecond: panel.querySelector('[data-row="tokensPerSecond"]'),
+				thinkResponse: panel.querySelector('[data-row="thinkResponse"]')
 			};
 			debug('panel-injected', { id: PANEL_ID });
 		}
@@ -571,6 +593,8 @@
 		setMetric('firstToken', formatDuration(result ? result.firstTokenMs : 0));
 		setMetric('totalTime', formatDuration(result ? result.totalMs : 0));
 		setMetric('tokensPerSecond', formatRate(result ? result.tokensPerSecond : 0));
+		setMetric('thinkResponse', formatThinkResponse(result));
+
 		if (result) {
 			setAskGeminiText(buildStatsText(result));
 		} else {
@@ -598,6 +622,7 @@
 		setMetric('firstToken', formatDuration(firstTokenMs));
 		setMetric('totalTime', formatDuration(totalMs));
 		setMetric('tokensPerSecond', formatRate(tokensPerSecond));
+		setMetric('thinkResponse', 'pending');
 	}
 
 	function capturePrompt(source) {
@@ -733,6 +758,7 @@
 		const totalMs = finishedAt - session.startedAt;
 		const firstTokenMs = session.firstResponseAt ? session.firstResponseAt - session.startedAt : 0;
 		const tokensPerSecond = totalMs > 0 ? session.responseTokens / (totalMs / 1000) : 0;
+		const { thinkPct, outputPct } = calculateThinkResponse(firstTokenMs, totalMs);
 
 		const result = {
 			promptTokens: session.promptTokens,
@@ -740,6 +766,8 @@
 			totalMs,
 			firstTokenMs,
 			tokensPerSecond,
+			thinkPct,
+			outputPct,
 			promptPreview: session.promptPreview
 		};
 
@@ -875,4 +903,3 @@
 		init();
 	}
 })();
-
