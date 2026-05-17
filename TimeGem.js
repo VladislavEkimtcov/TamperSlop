@@ -127,7 +127,7 @@
 			return '';
 		}
 
-		return `${result.responseTokens} tok, ${formatRate(result.tokensPerSecond)} tok/s, ${formatDuration(result.totalMs)} tot, ${formatDuration(result.firstTokenMs)} ttft, ${result.thinkPct}/${result.outputPct} t/r`;
+		return `${result.responseTokens} tok, ${formatRate(result.tokensPerSecond)} tok/s, ${formatDuration(result.totalMs)} tot, ${formatDuration(result.firstTokenMs)} ttr, ${result.thinkPct}/${result.outputPct} t/r`;
 	}
 
 	function getComposer() {
@@ -490,9 +490,8 @@
 			const list = document.createElement('table');
 			const body = document.createElement('tbody');
 			for (const [label, row, value] of [
-				['Prompt tokens', 'promptTokens', '0'],
 				['Response tokens', 'responseTokens', '0'],
-				['TTFT', 'firstToken', '0.00s'],
+				['Time to Response', 'firstToken', '0.00s'],
 				['Total time', 'totalTime', '0.00s'],
 				['Tokens / sec', 'tokensPerSecond', '0.00'],
 				['Think/Response', 'thinkResponse', '0%/0%']
@@ -515,7 +514,6 @@
 			state.panel = panel;
 			state.statusNode = panel.querySelector('.timegem-status');
 			state.rows = {
-				promptTokens: panel.querySelector('[data-row="promptTokens"]'),
 				responseTokens: panel.querySelector('[data-row="responseTokens"]'),
 				firstToken: panel.querySelector('[data-row="firstToken"]'),
 				totalTime: panel.querySelector('[data-row="totalTime"]'),
@@ -588,7 +586,6 @@
 			totalMs: result.totalMs
 		} : { ready: true });
 		setStatus(result ? 'Last run' : 'Ready');
-		setMetric('promptTokens', String(result ? result.promptTokens : 0));
 		setMetric('responseTokens', String(result ? result.responseTokens : 0));
 		setMetric('firstToken', formatDuration(result ? result.firstTokenMs : 0));
 		setMetric('totalTime', formatDuration(result ? result.totalMs : 0));
@@ -618,7 +615,6 @@
 		const tokensPerSecond = responseMs > 0 ? session.responseTokens / (responseMs / 1000) : 0;
 
 		setStatus(session.isFinalizing ? 'Settling' : 'Timing');
-		setMetric('promptTokens', String(session.promptTokens));
 		setMetric('responseTokens', String(session.responseTokens));
 		setMetric('firstToken', formatDuration(firstTokenMs));
 		setMetric('totalTime', formatDuration(totalMs));
