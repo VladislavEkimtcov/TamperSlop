@@ -614,7 +614,8 @@
 
 		const totalMs = now - session.startedAt;
 		const firstTokenMs = session.firstResponseAt ? session.firstResponseAt - session.startedAt : 0;
-		const tokensPerSecond = totalMs > 0 ? session.responseTokens / (totalMs / 1000) : 0;
+		const responseMs = session.firstResponseAt ? now - session.firstResponseAt : 0;
+		const tokensPerSecond = responseMs > 0 ? session.responseTokens / (responseMs / 1000) : 0;
 
 		setStatus(session.isFinalizing ? 'Settling' : 'Timing');
 		setMetric('promptTokens', String(session.promptTokens));
@@ -757,7 +758,8 @@
 		const finishedAt = snapshot.now;
 		const totalMs = finishedAt - session.startedAt;
 		const firstTokenMs = session.firstResponseAt ? session.firstResponseAt - session.startedAt : 0;
-		const tokensPerSecond = totalMs > 0 ? session.responseTokens / (totalMs / 1000) : 0;
+		const responseMs = session.firstResponseAt ? finishedAt - session.firstResponseAt : 0;
+		const tokensPerSecond = responseMs > 0 ? session.responseTokens / (responseMs / 1000) : 0;
 		const { thinkPct, outputPct } = calculateThinkResponse(firstTokenMs, totalMs);
 
 		const result = {
