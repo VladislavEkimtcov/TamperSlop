@@ -127,7 +127,7 @@
 			return '';
 		}
 
-		return `${result.responseTokens} tok, ${formatRate(result.tokensPerSecond)} tok/s, ${formatDuration(result.totalMs)} tot, ${formatDuration(result.firstTokenMs)} ttr, ${result.thinkPct}/${result.outputPct} t/r`;
+		return `${result.totalTokens} tok, ${formatRate(result.tokensPerSecond)} tok/s, ${formatDuration(result.totalMs)} tot, ${formatDuration(result.firstTokenMs)} ttr, ${result.thinkPct}/${result.outputPct} t/r`;
 	}
 
 	function getComposer() {
@@ -497,6 +497,7 @@
 			const body = document.createElement('tbody');
 			for (const [label, row, value] of [
 				['Response tokens', 'responseTokens', '0'],
+				['Total Tokens', 'totalTokens', '0'],
 				['Time to Response', 'firstToken', '0.00s'],
 				['Total time', 'totalTime', '0.00s'],
 				['Tokens / sec', 'tokensPerSecond', '0.00'],
@@ -521,6 +522,7 @@
 			state.statusNode = panel.querySelector('.timegem-status');
 			state.rows = {
 				responseTokens: panel.querySelector('[data-row="responseTokens"]'),
+				totalTokens: panel.querySelector('[data-row="totalTokens"]'),
 				firstToken: panel.querySelector('[data-row="firstToken"]'),
 				totalTime: panel.querySelector('[data-row="totalTime"]'),
 				tokensPerSecond: panel.querySelector('[data-row="tokensPerSecond"]'),
@@ -599,6 +601,7 @@
 		} : { ready: true });
 		setStatus(result ? 'Last run' : 'Ready');
 		setMetric('responseTokens', String(result ? result.responseTokens : 0));
+		setMetric('totalTokens', String(result ? Math.round(result.tokensPerSecond * (result.totalMs / 1000)) : 0));
 		setMetric('firstToken', formatDuration(result ? result.firstTokenMs : 0));
 		setMetric('totalTime', formatDuration(result ? result.totalMs : 0));
 		setMetric('tokensPerSecond', formatRate(result ? result.tokensPerSecond : 0));
@@ -628,6 +631,7 @@
 
 		setStatus(session.isFinalizing ? 'Settling' : 'Timing');
 		setMetric('responseTokens', String(session.responseTokens));
+		setMetric('totalTokens', String(Math.round(tokensPerSecond * (totalMs / 1000))));
 		setMetric('firstToken', formatDuration(firstTokenMs));
 		setMetric('totalTime', formatDuration(totalMs));
 		setMetric('tokensPerSecond', formatRate(tokensPerSecond));
