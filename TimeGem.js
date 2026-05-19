@@ -146,6 +146,12 @@
 	}
 
 	function getToolsButton() {
+        // if they update it one more time i swear
+		const uploadElement = document.querySelector('[aria-label="Upload & tools"]');
+		if (uploadElement) {
+			return uploadElement;
+		}
+
 		return Array.from(document.querySelectorAll('button')).find((button) => {
 			const label = button.getAttribute('aria-label') || '';
 			const text = normalizeWhitespace(button.innerText);
@@ -162,7 +168,7 @@
 			return null;
 		}
 
-		return button.closest('.toolbox-drawer-button-container') || button.parentElement;
+		return button.parentElement?.parentElement || button.parentElement || button;
 	}
 
 	function getSendIcon(button) {
@@ -524,7 +530,13 @@
 		}
 
 		const anchor = getToolsAnchor();
-		if (!anchor) {
+		const reference = getToolsButton();
+		if (!anchor || !reference) {
+			return;
+		}
+
+		const referenceParent = reference.parentElement;
+		if (!referenceParent) {
 			return;
 		}
 
@@ -557,8 +569,8 @@
 			state.triggerButton = triggerButton;
 		}
 
-		if (!anchor.contains(state.toolbarItem)) {
-			anchor.appendChild(state.toolbarItem);
+		if (state.toolbarItem.parentElement !== anchor || referenceParent.nextElementSibling !== state.toolbarItem) {
+			referenceParent.after(state.toolbarItem);
 		}
 
 		if (state.panel.parentElement !== state.toolbarItem) {
