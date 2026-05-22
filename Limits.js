@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Limits
 // @namespace    http://tampermonkey.net/
-// @version      0.2.0
+// @version      0.3.0
 // @description  Adds live countdowns and token estimates to Gemini usage limits.
 // @author       Null
 // @match        https://gemini.google.com/usage*
@@ -22,6 +22,8 @@
 	const WEEKLY_CARD_SELECTOR = '[data-test-id="gxu-weekly"]';
 	const BURN_METRICS_ROW_ID = 'limitsBurnMetricsRow';
 	const BURN_METRICS_ID = 'limitsBurnMetrics';
+	const WEEKLY_USAGE_STACK_ID = 'limitsWeeklyUsageStack';
+	const WEEKLY_TTD_ID = 'limitsWeeklyTtd';
 	const WARNING_COLOR = 'var(--lumi-sys-color--error, var(--gem-sys-color--error, #d93025))';
 
 	const state = {
@@ -82,6 +84,33 @@
 		}
 
 		return `${formatClockDuration(ms)} burnout`;
+	}
+
+	function formatWeeklyTtdLabel(ms, pctPerDay) {
+		let prefix = '';
+		if (Number.isFinite(pctPerDay) && pctPerDay > 0) {
+        prefix = `${pctPerDay.toFixed(1)}%/day | `;
+		}
+	
+		if (!Number.isFinite(ms)) {
+			return `${prefix}TTD ∞`;
+		}
+
+		return `${prefix}TTD ${formatDayClockDuration(ms)}`;
+	}
+
+	function formatProjectedDate(date) {
+		if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+			return '';
+		}
+
+		return date.toLocaleString([], {
+			weekday: 'short',
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit'
+		});
 	}
 
 	function parseUsageDetails(text) {
@@ -310,6 +339,88 @@
 		return metricsNode;
 	}
 
+	function ensureWeeklyTtdNode(usageNode) {
+		if (!(usageNode instanceof Element) || !usageNode.parentElement) {
+			return null;
+		}
+
+		let stack = document.getElementById(WEEKLY_USAGE_STACK_ID);
+		if (stack && !stack.contains(usageNode)) {
+			stack.remove();
+			stack = null;
+		}
+
+		if (!stack) {
+			stack = document.createElement('div');
+			stack.id = WEEKLY_USAGE_STACK_ID;
+			stack.style.display = 'flex';
+			stack.style.flexDirection = 'column';
+			stack.style.alignItems = 'flex-end';
+			stack.style.gap = '2px';
+			stack.style.flex = '0 0 auto';
+
+			usageNode.parentElement.insertBefore(stack, usageNode);
+			stack.appendChild(usageNode);
+		}
+
+		usageNode.style.margin = '0';
+		usageNode.style.textAlign = 'right';
+		usageNode.style.whiteSpace = 'nowrap';
+
+		let ttdNode = document.getElementById(WEEKLY_TTD_ID);
+		if (ttdNode && !stack.contains(ttdNode)) {
+			ttdNode.remove();
+			ttdNode = null;
+		}
+
+		if (!ttdNode) {
+			ttdNode = document.createElement('p');
+			ttdNode.id = WEEKLY_TTD_ID;
+			stack.appendChild(ttdNode);
+		}
+
+		ttdNode.className = usageNode.className;
+		ttdNode.style.margin = '0';
+		ttdNode.style.fontSize = '0.875em';
+		ttdNode.style.fontWeight = '500';
+		ttdNode.style.lineHeight = '1.2';
+		ttdNode.style.textAlign = 'right';
+		ttdNode.style.whiteSpace = 'nowrap';
+
+		return ttdNode;
+	}
+
+	function updateWeeklyUsageMetrics(weeklyState) {
+		if (!weeklyState || !(weeklyState.usageNode instanceof Element)) {
+			return;
+		}
+
+		const ttdNode = ensureWeeklyTtdNode(weeklyState.usageNode);
+		if (!ttdNode) {
+			return;
+		}
+
+		const hasUsage = weeklyState.usageDetails && Number.isFinite(weeklyState.usageDetails.percent);
+		weeklyState.usageNode.style.color = weeklyState.isUnsustainable ? WARNING_COLOR : '';
+
+		if (!hasUsage) {
+			ttdNode.textContent = '';
+			ttdNode.style.display = 'none';
+			ttdNode.style.color = '';
+			ttdNode.removeAttribute('title');
+			return;
+		}
+
+		ttdNode.style.display = '';
+		ttdNode.style.color = weeklyState.isUnsustainable ? WARNING_COLOR : '';
+		ttdNode.textContent = formatWeeklyTtdLabel(weeklyState.projectedDepletionMs, weeklyState.actualRatePctPerDay);
+
+		const projectedDateLabel = formatProjectedDate(weeklyState.projectedDepletionAt);
+		ttdNode.title = Number.isFinite(weeklyState.projectedDepletionMs)
+			? `${weeklyState.isAheadOfIdeal ? 'Current weekly usage is ahead of the ideal reset pace.' : 'Current weekly usage is at or below the ideal reset pace.'} ${weeklyState.isUnsustainable ? 'At the current weekly pace, the cap is projected to run out before reset.' : 'At the current weekly pace, the cap is projected to last through reset.'}${projectedDateLabel ? ` Projected hit: ${projectedDateLabel}.` : ''}`
+			: 'At the current weekly pace, the weekly cap is not currently on track to deplete.';
+	}
+
 	function getWeeklyUsageState() {
 		const card = getWeeklyCard();
 		if (!card) {
@@ -334,16 +445,38 @@
 
 		if (!usageDetails || !Number.isFinite(usageDetails.percent)) {
 			return {
+				usageNode,
+				usageDetails,
+				remainingMs,
+				projectedDepletionMs: Infinity,
+				projectedDepletionAt: null,
 				isUnsustainable: false
 			};
 		}
 
 		const elapsedMs = Math.max(0, Math.min(WEEKLY_PERIOD_MS, WEEKLY_PERIOD_MS - remainingMs));
 		const actualRatePctPerMs = elapsedMs > 0 ? usageDetails.percent / elapsedMs : 0;
-		const projectedDepletionMs = actualRatePctPerMs > 0 ? ((100 - usageDetails.percent) / actualRatePctPerMs) : Infinity;
+		const actualRatePctPerDay = actualRatePctPerMs * 24 * 60 * 60 * 1000;
+		const remainingPercent = Math.max(0, 100 - usageDetails.percent);
+		const idealRatePctPerMs = 100 / WEEKLY_PERIOD_MS;
+		const isAheadOfIdeal = actualRatePctPerMs > idealRatePctPerMs;
+		const projectedDepletionMs = usageDetails.percent >= 100 ? 0 : (actualRatePctPerMs > 0 ? (remainingPercent / actualRatePctPerMs) : Infinity);
+		const projectedDepletionAt = Number.isFinite(projectedDepletionMs)
+			? new Date(Date.now() + projectedDepletionMs)
+			: null;
 
 		return {
-			isUnsustainable: usageDetails.percent >= 100 || projectedDepletionMs < remainingMs - 1000
+			usageNode,
+			usageDetails,
+			remainingMs,
+			elapsedMs,
+			actualRatePctPerMs,
+			actualRatePctPerDay,
+			idealRatePctPerMs,
+			isAheadOfIdeal,
+			projectedDepletionMs,
+			projectedDepletionAt,
+			isUnsustainable: usageDetails.percent >= 100 || (isAheadOfIdeal && projectedDepletionMs < remainingMs - 1000)
 		};
 	}
 
@@ -424,7 +557,9 @@
 	}
 
 	function updateWeeklyReset() {
-		return getWeeklyUsageState();
+		const weeklyState = getWeeklyUsageState();
+		updateWeeklyUsageMetrics(weeklyState);
+		return weeklyState;
 	}
 
 	function sync() {
