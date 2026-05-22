@@ -128,11 +128,12 @@
 		return Math.max(0, Math.round(tokensPerSecond * (totalMs / 1000)));
 	}
 
-	function getConversationTokenTotal(promptTokens, totalTokens) {
+	function getConversationTokenTotal(promptTokens, totalTokens, previousTokens = 0) {
 		const promptTotal = Number.isFinite(promptTokens) ? Math.max(0, Math.round(promptTokens)) : 0;
 		const responseTotal = Number.isFinite(totalTokens) ? Math.max(0, Math.round(totalTokens)) : 0;
+		const previousTotal = Number.isFinite(previousTokens) ? Math.max(0, Math.round(previousTokens)) : 0;
 
-		return promptTotal + responseTotal;
+		return promptTotal + responseTotal + previousTotal;
 	}
 
 	function getCacheStore() {
@@ -163,9 +164,7 @@
 		const previousConversationTokens = Number.isFinite(lastConversationTokens) && lastConversationTokens > 0
 			? Math.round(lastConversationTokens)
 			: 0;
-		const cacheHitTokens = totalConversationTokens > 0
-			? Math.max(0, totalConversationTokens - previousConversationTokens)
-			: 0;
+		const cacheHitTokens = previousConversationTokens;
 		const cacheHitPct = totalConversationTokens > 0
 			? (cacheHitTokens / totalConversationTokens) * 100
 			: 0;
@@ -726,7 +725,7 @@
 		const tokensPerSecond = responseMs > 0 ? session.responseTokens / (responseMs / 1000) : 0;
 		const totalTokens = estimateTotalTokens(tokensPerSecond, totalMs);
 		const cacheMetrics = calculateCacheHit(
-			getConversationTokenTotal(session.promptTokens, totalTokens),
+			getConversationTokenTotal(session.promptTokens, totalTokens, session.previousConversationTokens),
 			session.previousConversationTokens
 		);
 
@@ -878,7 +877,7 @@
 		const tokensPerSecond = responseMs > 0 ? session.responseTokens / (responseMs / 1000) : 0;
 		const totalTokens = estimateTotalTokens(tokensPerSecond, totalMs);
 		const cacheMetrics = calculateCacheHit(
-			getConversationTokenTotal(session.promptTokens, totalTokens),
+			getConversationTokenTotal(session.promptTokens, totalTokens, session.previousConversationTokens),
 			session.previousConversationTokens
 		);
 		const { thinkPct, outputPct } = calculateThinkResponse(firstTokenMs, totalMs);
@@ -932,6 +931,7 @@
 		state.session = null;
 		state.lastAction = null;
 		state.lastUrl = location.href;
+		setLastConversationTokens(0);
 		debug('navigation-reset', { url: state.lastUrl });
 		renderIdle(null);
 	}
