@@ -20,7 +20,9 @@
 	const STABLE_FOR_MS = 1200;
 	const POLL_INTERVAL_MS = 500;
 	const ASK_GEMINI_TEXT = 'Ask Gemini';
+	const CACHE_STORE_KEY = '__timegemCacheStore';
 	const DEBUG = false;
+	const INTEGER_FORMATTER = new Intl.NumberFormat('en-US');
 
 	function debug(event, payload) {
 		if (!DEBUG) {
@@ -100,6 +102,88 @@
 		}
 
 		return value.toFixed(2);
+	}
+
+	function formatInteger(value) {
+		if (!Number.isFinite(value) || value <= 0) {
+			return '0';
+		}
+
+		return INTEGER_FORMATTER.format(Math.round(value));
+	}
+
+	function formatPercent(value) {
+		if (!Number.isFinite(value) || value <= 0) {
+			return '0%';
+		}
+
+		return `${Math.round(value)}%`;
+	}
+
+	function estimateTotalTokens(tokensPerSecond, totalMs) {
+		if (!Number.isFinite(tokensPerSecond) || !Number.isFinite(totalMs) || tokensPerSecond <= 0 || totalMs <= 0) {
+			return 0;
+		}
+
+		return Math.max(0, Math.round(tokensPerSecond * (totalMs / 1000)));
+	}
+
+	function getConversationTokenTotal(promptTokens, totalTokens) {
+		const promptTotal = Number.isFinite(promptTokens) ? Math.max(0, Math.round(promptTokens)) : 0;
+		const responseTotal = Number.isFinite(totalTokens) ? Math.max(0, Math.round(totalTokens)) : 0;
+
+		return promptTotal + responseTotal;
+	}
+
+	function getCacheStore() {
+		if (!window[CACHE_STORE_KEY]) {
+			window[CACHE_STORE_KEY] = {
+				lastConversationTokens: 0
+			};
+		}
+
+		return window[CACHE_STORE_KEY];
+	}
+
+	function getLastConversationTokens() {
+		const value = Number(getCacheStore().lastConversationTokens);
+		return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+	}
+
+	function setLastConversationTokens(value) {
+		getCacheStore().lastConversationTokens = Number.isFinite(value) && value > 0
+			? Math.round(value)
+			: 0;
+	}
+
+	function calculateCacheHit(conversationTokens, lastConversationTokens) {
+		const totalConversationTokens = Number.isFinite(conversationTokens) && conversationTokens > 0
+			? Math.round(conversationTokens)
+			: 0;
+		const previousConversationTokens = Number.isFinite(lastConversationTokens) && lastConversationTokens > 0
+			? Math.round(lastConversationTokens)
+			: 0;
+		const cacheHitTokens = totalConversationTokens > 0
+			? Math.max(0, totalConversationTokens - previousConversationTokens)
+			: 0;
+		const cacheHitPct = totalConversationTokens > 0
+			? (cacheHitTokens / totalConversationTokens) * 100
+			: 0;
+
+		return {
+			cacheHitTokens,
+			cacheHitPct,
+			totalConversationTokens,
+			previousConversationTokens
+		};
+	}
+
+	function formatCacheHitCount(result) {
+		if (!result) {
+			return '0/0';
+		}
+
+		return `${formatInteger(result.cacheHitTokens)}/${formatInteger(result.totalConversationTokens)}`;
 	}
 
 	function calculateThinkResponse(firstTokenMs, totalMs) {
@@ -498,6 +582,8 @@
 			for (const [label, row, value] of [
 				['Response tokens', 'responseTokens', '0'],
 				['Total Tokens', 'totalTokens', '0'],
+				['Cache hit count', 'cacheHitCount', '0/0'],
+				['Cache Hit', 'cacheHitPercent', '0%'],
 				['Time to Response', 'firstToken', '0.00s'],
 				['Total time', 'totalTime', '0.00s'],
 				['Tokens / sec', 'tokensPerSecond', '0.00'],
@@ -523,6 +609,8 @@
 			state.rows = {
 				responseTokens: panel.querySelector('[data-row="responseTokens"]'),
 				totalTokens: panel.querySelector('[data-row="totalTokens"]'),
+				cacheHitCount: panel.querySelector('[data-row="cacheHitCount"]'),
+				cacheHitPercent: panel.querySelector('[data-row="cacheHitPercent"]'),
 				firstToken: panel.querySelector('[data-row="firstToken"]'),
 				totalTime: panel.querySelector('[data-row="totalTime"]'),
 				tokensPerSecond: panel.querySelector('[data-row="tokensPerSecond"]'),
@@ -592,16 +680,24 @@
 		}
 	}
 
+	function setCacheMetrics(metrics) {
+		setMetric('cacheHitCount', formatCacheHitCount(metrics));
+		setMetric('cacheHitPercent', formatPercent(metrics ? metrics.cacheHitPct : 0));
+	}
+
 	function renderIdle(result) {
 		ensurePanel();
 		debug('render-idle', result ? {
 			promptTokens: result.promptTokens,
 			responseTokens: result.responseTokens,
-			totalMs: result.totalMs
+			totalMs: result.totalMs,
+			cacheHitTokens: result.cacheHitTokens,
+			totalConversationTokens: result.totalConversationTokens
 		} : { ready: true });
 		setStatus(result ? 'Last run' : 'Ready');
 		setMetric('responseTokens', String(result ? result.responseTokens : 0));
-		setMetric('totalTokens', String(result ? Math.round(result.tokensPerSecond * (result.totalMs / 1000)) : 0));
+		setMetric('totalTokens', String(result ? result.totalTokens : 0));
+		setCacheMetrics(result);
 		setMetric('firstToken', formatDuration(result ? result.firstTokenMs : 0));
 		setMetric('totalTime', formatDuration(result ? result.totalMs : 0));
 		setMetric('tokensPerSecond', formatRate(result ? result.tokensPerSecond : 0));
@@ -628,10 +724,16 @@
 		const firstTokenMs = session.firstResponseAt ? session.firstResponseAt - session.startedAt : 0;
 		const responseMs = session.firstResponseAt ? now - session.firstResponseAt : 0;
 		const tokensPerSecond = responseMs > 0 ? session.responseTokens / (responseMs / 1000) : 0;
+		const totalTokens = estimateTotalTokens(tokensPerSecond, totalMs);
+		const cacheMetrics = calculateCacheHit(
+			getConversationTokenTotal(session.promptTokens, totalTokens),
+			session.previousConversationTokens
+		);
 
 		setStatus(session.isFinalizing ? 'Settling' : 'Timing');
 		setMetric('responseTokens', String(session.responseTokens));
-		setMetric('totalTokens', String(Math.round(tokensPerSecond * (totalMs / 1000))));
+		setMetric('totalTokens', String(totalTokens));
+		setCacheMetrics(cacheMetrics);
 		setMetric('firstToken', formatDuration(firstTokenMs));
 		setMetric('totalTime', formatDuration(totalMs));
 		setMetric('tokensPerSecond', formatRate(tokensPerSecond));
@@ -679,6 +781,7 @@
 			promptText,
 			promptPreview: normalizeWhitespace(promptText).slice(0, 72) || 'Untitled prompt',
 			promptTokens: estimateTokens(promptText),
+			previousConversationTokens: getLastConversationTokens(),
 			baselineResponseKey: snapshot.responseKey,
 			baselineResponseText: snapshot.responseText,
 			responseKey: '',
@@ -694,6 +797,7 @@
 		debug('session-begin', {
 			promptPreview: session.promptPreview,
 			promptTokens: session.promptTokens,
+			previousConversationTokens: session.previousConversationTokens,
 			responseKey: session.baselineResponseKey
 		});
 		renderSession(session, snapshot.now);
@@ -772,32 +876,50 @@
 		const firstTokenMs = session.firstResponseAt ? session.firstResponseAt - session.startedAt : 0;
 		const responseMs = session.firstResponseAt ? finishedAt - session.firstResponseAt : 0;
 		const tokensPerSecond = responseMs > 0 ? session.responseTokens / (responseMs / 1000) : 0;
+		const totalTokens = estimateTotalTokens(tokensPerSecond, totalMs);
+		const cacheMetrics = calculateCacheHit(
+			getConversationTokenTotal(session.promptTokens, totalTokens),
+			session.previousConversationTokens
+		);
 		const { thinkPct, outputPct } = calculateThinkResponse(firstTokenMs, totalMs);
 
 		const result = {
 			promptTokens: session.promptTokens,
 			responseTokens: session.responseTokens,
+			totalTokens,
 			totalMs,
 			firstTokenMs,
 			tokensPerSecond,
 			thinkPct,
 			outputPct,
-			promptPreview: session.promptPreview
+			promptPreview: session.promptPreview,
+			cacheHitTokens: cacheMetrics.cacheHitTokens,
+			cacheHitPct: cacheMetrics.cacheHitPct,
+			totalConversationTokens: cacheMetrics.totalConversationTokens,
+			previousConversationTokens: cacheMetrics.previousConversationTokens
 		};
+
+		setLastConversationTokens(result.totalConversationTokens);
 
 		state.session = null;
 		state.lastAction = null;
 		debug('session-finish', {
 			promptTokens: result.promptTokens,
 			responseTokens: result.responseTokens,
+			totalTokens: result.totalTokens,
 			totalMs: result.totalMs,
-			firstTokenMs: result.firstTokenMs
+			firstTokenMs: result.firstTokenMs,
+			cacheHitTokens: result.cacheHitTokens,
+			totalConversationTokens: result.totalConversationTokens
 		});
 
 		debug('summary', {
 			prompt: session.promptText,
 			promptTokens: result.promptTokens,
 			responseTokens: result.responseTokens,
+			totalTokens: result.totalTokens,
+			cacheHitTokens: result.cacheHitTokens,
+			totalConversationTokens: result.totalConversationTokens,
 			firstTokenMs: result.firstTokenMs,
 			totalMs: result.totalMs,
 			tokensPerSecond: Number(result.tokensPerSecond.toFixed(2))
