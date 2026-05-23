@@ -423,7 +423,7 @@
 			responseKey: latestResponse ? latestResponse.key : '',
 			responseBusy,
 			responseText: response ? normalizeWhitespace(response.innerText) : '',
-			isGenerating: /stop/i.test(sendButtonLabel) || responseBusy || sendIconHidden
+			isGenerating: Boolean(document.querySelector('[fonticon="stop"]'))
 		};
 	}
 
@@ -719,9 +719,10 @@
 			isFinalizing: session.isFinalizing
 		});
 
-		const totalMs = now - session.startedAt;
+		const endMs = session.idleSince ? session.idleSince : now;
+		const totalMs = endMs - session.startedAt;
 		const firstTokenMs = session.firstResponseAt ? session.firstResponseAt - session.startedAt : 0;
-		const responseMs = session.firstResponseAt ? now - session.firstResponseAt : 0;
+		const responseMs = session.firstResponseAt ? endMs - session.firstResponseAt : 0;
 		const tokensPerSecond = responseMs > 0 ? session.responseTokens / (responseMs / 1000) : 0;
 		const totalTokens = estimateTotalTokens(tokensPerSecond, totalMs);
 		const cacheMetrics = calculateCacheHit(
@@ -870,7 +871,7 @@
 			return;
 		}
 
-		const finishedAt = snapshot.now;
+		const finishedAt = session.idleSince || snapshot.now;
 		const totalMs = finishedAt - session.startedAt;
 		const firstTokenMs = session.firstResponseAt ? session.firstResponseAt - session.startedAt : 0;
 		const responseMs = session.firstResponseAt ? finishedAt - session.firstResponseAt : 0;
