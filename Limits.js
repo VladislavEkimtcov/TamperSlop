@@ -504,10 +504,21 @@
 
 		metricsNode.style.display = '';
 		metricsNode.textContent = `${formatTokenRate(burnRatePerHour)} / ${formatBurnoutLabel(burnoutMs)}`;
-		metricsNode.style.color = weeklyState && weeklyState.isUnsustainable ? WARNING_COLOR : '';
-		metricsNode.title = weeklyState && weeklyState.isUnsustainable
-			? 'Weekly usage pace is ahead of the weekly reset schedule.'
-			: 'Token burn rate and projected time to deplete the current usage cap.';
+
+		const remainingMs = Math.max(0, target.getTime() - now);
+		const isDailyUnsustainable = burnoutMs < remainingMs;
+		const isWeeklyUnsustainable = Boolean(weeklyState && weeklyState.isUnsustainable);
+
+		metricsNode.style.color = isDailyUnsustainable || isWeeklyUnsustainable ? WARNING_COLOR : '';
+		if (isDailyUnsustainable && isWeeklyUnsustainable) {
+			metricsNode.title = 'Both current and weekly usage paces are ahead of their reset schedules.';
+		} else if (isDailyUnsustainable) {
+			metricsNode.title = 'Current usage pace is ahead of the current reset schedule.';
+		} else if (isWeeklyUnsustainable) {
+			metricsNode.title = 'Weekly usage pace is ahead of the weekly reset schedule.';
+		} else {
+			metricsNode.title = 'Token burn rate and projected time to deplete the current usage cap.';
+		}
 	}
 
 	function updateUpdatedLabel() {
