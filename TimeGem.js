@@ -59,7 +59,8 @@
 		toolbarItem: null,
 		triggerButton: null,
 		rows: null,
-		statusNode: null
+		statusNode: null,
+		panelTimeout: null
 	};
 
 	if (window.top !== window.self) {
@@ -437,10 +438,9 @@
 			style.id = STYLE_ID;
 			style.textContent = `
 				#${PANEL_ID} {
-					position: absolute;
-					bottom: calc(100% + 8px);
-					left: calc(100% - 40px);
-					right: auto;
+					position: fixed;
+					margin: 0;
+					inset: auto;
 					z-index: 2147483647;
 					width: 260px;
 					padding: 12px 14px;
@@ -509,8 +509,7 @@
 					table-layout: fixed;
 				}
 
-				#${TOOLBAR_ITEM_ID}:hover #${PANEL_ID},
-				#${TOOLBAR_ITEM_ID}:focus-within #${PANEL_ID} {
+				#${PANEL_ID}.timegem-visible {
 					opacity: 1;
 					visibility: visible;
 					pointer-events: auto;
@@ -562,6 +561,7 @@
 		if (!state.panel) {
 			const panel = document.createElement('aside');
 			panel.id = PANEL_ID;
+			panel.setAttribute('popover', 'manual');
 
 			const header = document.createElement('div');
 			header.className = 'timegem-header';
@@ -658,12 +658,42 @@
 			state.triggerButton = triggerButton;
 		}
 
+		const showPanel = () => {
+			clearTimeout(state.panelTimeout);
+			if (state.toolbarItem && state.panel) {
+            const rect = state.toolbarItem.getBoundingClientRect();
+            state.panel.style.bottom = `${window.innerHeight - rect.top + 8}px`;
+            state.panel.style.left = `${rect.left}px`;
+            try { if (!state.panel.matches(':popover-open')) state.panel.showPopover(); } catch(e){}
+            requestAnimationFrame(() => state.panel.classList.add('timegem-visible'));
+			}
+		};
+		const hidePanel = () => {
+			state.panelTimeout = setTimeout(() => {
+            if (state.panel) {
+                state.panel.classList.remove('timegem-visible');
+                setTimeout(() => {
+                    if (state.panel && !state.panel.classList.contains('timegem-visible')) {
+                        try { state.panel.hidePopover(); } catch(e){}
+                    }
+                }, 150); // wait for CSS transition to finish
+            }
+			}, 100);
+		};
+
+		state.toolbarItem.onmouseenter = showPanel;
+		state.toolbarItem.onmouseleave = hidePanel;
+		state.toolbarItem.onfocusin = showPanel;
+		state.toolbarItem.onfocusout = hidePanel;
+		state.panel.onmouseenter = showPanel;
+		state.panel.onmouseleave = hidePanel;
+
 		if (state.toolbarItem.parentElement !== anchor || referenceParent.nextElementSibling !== state.toolbarItem) {
 			referenceParent.after(state.toolbarItem);
 		}
 
-		if (state.panel.parentElement !== state.toolbarItem) {
-			state.toolbarItem.appendChild(state.panel);
+		if (state.panel.parentElement !== document.body) {
+			document.body.appendChild(state.panel);
 		}
 	}
 
