@@ -66,6 +66,7 @@
 
             // 1. Open the model menu
             const pill = await waitForElement(() => document.querySelector('.logo-pill-label-container'));
+            await randomSleep(200, 600);
             simulateHumanClick(pill);
             await randomSleep(300, 700);
 
