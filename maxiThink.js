@@ -81,7 +81,11 @@
             await randomSleep(300, 650);
 
             // 4. Click the thinking level dropdown
-            const think = await waitForElement(() => document.querySelector('[value="thinking_level"]'));
+            const think = await waitForElement(() => {
+                const xpath = "//div[normalize-space(text())='Complex problem solving']";
+                const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                return result.singleNodeValue;
+            });
             simulateHumanClick(think);
             await randomSleep(350, 750);
 
