@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Gemini Auto-Switcher: 3.5 Flash & Thinking
+// @name         Gemini Auto-Switcher: 3.6 Flash & Thinking
 // @namespace    http://tampermonkey.net/
 // @version      1.0
-// @description  Automates the UI clicks to set Gemini 3.5 Flash and Complex problem solving.
+// @description  Automates the UI clicks to set Gemini 3.6 Flash and Complex problem solving.
 // @author       You
 // @match        https://gemini.google.com/*
 // @grant        none
@@ -70,8 +70,8 @@
             simulateHumanClick(pill);
             await randomSleep(300, 700);
 
-            // 2. Select 3.5 Flash
-            const model = await waitForElement(() => getElementByText(" 3.5 Flash "));
+            // 2. Select 3.6 Flash
+            const model = await waitForElement(() => getElementByText(" 3.6 Flash "));
             simulateHumanClick(model);
             await randomSleep(400, 800);
 
