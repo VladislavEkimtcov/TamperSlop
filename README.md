@@ -7,3 +7,4 @@ AI generated Tampermonkey scripts
 - **maxiThink.js**: Auto-select 3.5 Flash Think in Gemini Web
 - **retroCastSkip.js**: Disable "local on 8s" simulation on weather.com's RetroCast.
 - **Limits.js**: Adds live countdowns and token estimates to Gemini usage limits.
+- **splitYoutube.js**: Adjust major youtube video page component sizes

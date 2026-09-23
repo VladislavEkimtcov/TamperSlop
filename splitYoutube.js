@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Resizable Watch Columns
 // @namespace    split-youtube
-// @version      1.0.0
+// @version      1.1.0
 // @description  Drag the video/sidebar and thumbnail/title dividers on YouTube watch pages.
 // @match        https://www.youtube.com/watch*
 // @match        https://www.youtube.com/live/*
@@ -23,31 +23,31 @@
   const style = document.createElement('style');
   style.id = 'yt-resizable-watch-columns-style';
   style.textContent = `
-    ytd-watch-flexy.yt-resizable-watch-columns {
+    :is(ytd-watch-flexy, ytd-watch-grid).yt-resizable-watch-columns {
       --ytd-watch-flexy-sidebar-width: var(--yt-resizable-sidebar-width) !important;
       --ytd-watch-compact-thumbnail-width: var(--yt-resizable-thumbnail-ratio) !important;
     }
-    ytd-watch-flexy.yt-resizable-watch-columns #columns {
+    :is(ytd-watch-flexy, ytd-watch-grid).yt-resizable-watch-columns #columns {
       display: flex !important;
       align-items: flex-start !important;
     }
-    ytd-watch-flexy.yt-resizable-watch-columns #primary {
-      flex: 1 1 auto !important;
+    :is(ytd-watch-flexy, ytd-watch-grid).yt-resizable-watch-columns #primary {
+      flex: 1 1 0 !important;
       min-width: ${LIMITS.primaryMin}px !important;
       width: auto !important;
     }
-    ytd-watch-flexy.yt-resizable-watch-columns #secondary {
+    :is(ytd-watch-flexy, ytd-watch-grid).yt-resizable-watch-columns #secondary {
       display: block !important;
       flex: 0 0 var(--yt-resizable-sidebar-width) !important;
       width: var(--yt-resizable-sidebar-width) !important;
       min-width: var(--yt-resizable-sidebar-width) !important;
     }
-    ytd-watch-flexy.yt-resizable-watch-columns #secondary
+    :is(ytd-watch-flexy, ytd-watch-grid).yt-resizable-watch-columns #secondary
       a.ytLockupViewModelContentImage {
       width: var(--yt-resizable-thumbnail-ratio) !important;
       flex: 0 0 var(--yt-resizable-thumbnail-ratio) !important;
     }
-    ytd-watch-flexy.yt-resizable-watch-columns #secondary
+    :is(ytd-watch-flexy, ytd-watch-grid).yt-resizable-watch-columns #secondary
       ytd-compact-video-renderer #thumbnail {
       width: var(--yt-resizable-thumbnail-ratio) !important;
       flex: 0 0 var(--yt-resizable-thumbnail-ratio) !important;
@@ -136,7 +136,10 @@
   }
 
   function getWatch() {
-    return document.querySelector('ytd-watch-flexy');
+    // YouTube is rolling out ytd-watch-grid beside the long-standing
+    // ytd-watch-flexy host. Both expose primary/secondary columns, but only
+    // the latter was selected by the original version of this script.
+    return document.querySelector('ytd-watch-flexy, ytd-watch-grid');
   }
 
   function getColumns(watch) {
@@ -145,9 +148,29 @@
 
   function isResizableWatch(watch) {
     const columns = getColumns(watch);
+    const primary = watch?.querySelector('#primary');
     const secondary = watch?.querySelector('#secondary');
-    return Boolean(columns && secondary && columns.getBoundingClientRect().width >=
-      LIMITS.primaryMin + LIMITS.sidebarMin + LIMITS.columnGap);
+    if (!columns || !primary || !secondary) return false;
+
+    const primaryRect = primary.getBoundingClientRect();
+    const secondaryRect = secondary.getBoundingClientRect();
+    const layoutWidth = getLayoutWidth(columns, primaryRect, secondaryRect);
+    return primaryRect.width > 0 && secondaryRect.width > 0 &&
+      layoutWidth >= LIMITS.primaryMin + LIMITS.sidebarMin + LIMITS.columnGap;
+  }
+
+  function getLayoutWidth(columns, primaryRect, secondaryRect) {
+    // In ytd-watch-grid's split-scroll variation the sidebar lives in a
+    // fixed container rather than contributing to #columns' own width.
+    // The union of the visible columns is the usable width in both layouts.
+    const columnRect = columns.getBoundingClientRect();
+    const left = Math.min(columnRect.left, primaryRect.left, secondaryRect.left);
+    const right = Math.max(columnRect.right, primaryRect.right, secondaryRect.right);
+    return right - left;
+  }
+
+  function getSidebarSide(primaryRect, secondaryRect) {
+    return secondaryRect.left < primaryRect.left ? 'left' : 'right';
   }
 
   function clamp(value, min, max) {
@@ -155,7 +178,12 @@
   }
 
   function normalizedSettings(watch) {
-    const width = getColumns(watch)?.getBoundingClientRect().width || window.innerWidth;
+    const columns = getColumns(watch);
+    const primary = watch.querySelector('#primary');
+    const secondary = watch.querySelector('#secondary');
+    const width = columns && primary && secondary
+      ? getLayoutWidth(columns, primary.getBoundingClientRect(), secondary.getBoundingClientRect())
+      : window.innerWidth;
     const maxSidebar = Math.max(LIMITS.sidebarMin, width - LIMITS.primaryMin - LIMITS.columnGap);
     settings.sidebar = clamp(Number(settings.sidebar) || DEFAULTS.sidebar, LIMITS.sidebarMin, maxSidebar);
     const minRatio = Math.min(0.8, LIMITS.thumbnailMin / settings.sidebar);
@@ -188,15 +216,18 @@
     const columnsRect = columns.getBoundingClientRect();
     const primaryRect = primary.getBoundingClientRect();
     const secondaryRect = secondary.getBoundingClientRect();
+    const sidebarSide = getSidebarSide(primaryRect, secondaryRect);
     const top = Math.max(columnsRect.top, 0);
     const height = Math.max(0, Math.min(columnsRect.bottom, window.innerHeight) - top);
 
     sidebarDivider.hidden = false;
-    sidebarDivider.style.left = `${primaryRect.right}px`;
+    sidebarDivider.style.left = `${sidebarSide === 'left' ? primaryRect.left : primaryRect.right}px`;
     sidebarDivider.style.top = `${top}px`;
     sidebarDivider.style.height = `${height}px`;
     sidebarDivider.setAttribute('aria-valuemin', String(LIMITS.sidebarMin));
-    sidebarDivider.setAttribute('aria-valuemax', String(Math.round(columnsRect.width - LIMITS.primaryMin - LIMITS.columnGap)));
+    sidebarDivider.setAttribute('aria-valuemax', String(Math.round(
+      getLayoutWidth(columns, primaryRect, secondaryRect) - LIMITS.primaryMin - LIMITS.columnGap,
+    )));
     sidebarDivider.setAttribute('aria-valuenow', String(Math.round(secondaryRect.width)));
 
     thumbnailDivider.hidden = false;
@@ -222,11 +253,18 @@
     if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
     const watch = getWatch();
     const columns = getColumns(watch);
+    const primary = watch?.querySelector('#primary');
     const secondary = watch?.querySelector('#secondary');
-    if (!columns || !secondary) return;
-    const columnsRect = columns.getBoundingClientRect();
+    if (!columns || !primary || !secondary) return;
+    const primaryRect = primary.getBoundingClientRect();
     if (activeDrag.kind === 'sidebar') {
-      settings.sidebar = columnsRect.right - event.clientX;
+      const secondaryRect = secondary.getBoundingClientRect();
+      const side = getSidebarSide(primaryRect, secondaryRect);
+      const layoutLeft = Math.min(columns.getBoundingClientRect().left, primaryRect.left, secondaryRect.left);
+      const layoutRight = Math.max(columns.getBoundingClientRect().right, primaryRect.right, secondaryRect.right);
+      settings.sidebar = side === 'left'
+        ? event.clientX - layoutLeft
+        : layoutRight - event.clientX;
     } else {
       const secondaryRect = secondary.getBoundingClientRect();
       settings.thumbnailRatio = (event.clientX - secondaryRect.left) / secondaryRect.width;
@@ -300,4 +338,3 @@
   resizeObserver.observe(document.documentElement);
   restoreSavedEdges();
 })();
-
