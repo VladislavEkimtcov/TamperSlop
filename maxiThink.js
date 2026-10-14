@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Gemini Auto-Switcher: 3.6 Flash & Thinking
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Automates the UI clicks to set Gemini 3.6 Flash and Complex problem solving.
+// @version      1.1
+// @description  Automates the UI clicks to set Gemini 3.6 Flash and High thinking level.
 // @author       You
 // @match        https://gemini.google.com/*
 // @grant        none
@@ -19,6 +19,15 @@
         const xpath = `//*[text()="${text}"]`;
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         return result.singleNodeValue;
+    }
+
+    // Utility: Find a visible <gem-menu-item> by its trimmed label text
+    function getMenuItemByLabel(label) {
+        const items = document.querySelectorAll('gem-menu-item');
+        return Array.from(items).find(item => {
+            const labelEl = item.querySelector('.label');
+            return labelEl && labelEl.textContent.trim() === label && item.getBoundingClientRect().width > 0;
+        }) || null;
     }
 
     // Utility: Wait for an element to exist in the DOM and be visible
@@ -58,6 +67,24 @@
         });
     }
 
+    // Utility: Simulate the pointer hovering over an element (opens hover submenus)
+    function simulateHover(el) {
+        const rect = el.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+
+        ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove'].forEach(type => {
+            const Ctor = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+            el.dispatchEvent(new Ctor(type, {
+                view: window,
+                bubbles: !type.endsWith('enter'),
+                cancelable: true,
+                clientX: x,
+                clientY: y
+            }));
+        });
+    }
+
     // Main execution sequence
     async function runSequence() {
         try {
@@ -80,18 +107,21 @@
             simulateHumanClick(pillReopen);
             await randomSleep(300, 650);
 
-            // 4. Click the thinking level dropdown
-            const think = await waitForElement(() => {
-                const xpath = "//div[normalize-space(text())='Complex problem solving']";
-                const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                return result.singleNodeValue;
-            });
-            simulateHumanClick(think);
+            // 4. Hover the "Thinking level" item to open its submenu
+            const thinkItem = await waitForElement(() => getMenuItemByLabel('Thinking level'));
+            simulateHover(thinkItem);
             await randomSleep(350, 750);
 
-            // 5. Select "Complex problem solving"
-            const extendedElement = await waitForElement(() => getElementByText("Complex problem solving"));
-            simulateHumanClick(extendedElement);
+            // 5. Select "High" (fall back to a click on the trigger if hover didn't open the submenu)
+            let highItem;
+            try {
+                highItem = await waitForElement(() => getMenuItemByLabel('High'), 2000);
+            } catch (_) {
+                simulateHumanClick(thinkItem);
+                await randomSleep(350, 750);
+                highItem = await waitForElement(() => getMenuItemByLabel('High'));
+            }
+            simulateHumanClick(highItem);
 
             console.log("Gemini Auto-Switcher: Successfully applied preferences.");
 
