@@ -89,7 +89,7 @@
     async function runSequence() {
         try {
             // Wait for initial page load to settle
-            await randomSleep(800, 1500);
+            await randomSleep(1500, 3500);
 
             // 1. Open the model menu
             const pill = await waitForElement(() => document.querySelector('.logo-pill-label-container'));
