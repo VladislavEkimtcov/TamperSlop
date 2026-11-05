@@ -93,6 +93,10 @@
 
             // 1. Open the model menu
             const pill = await waitForElement(() => document.querySelector('.logo-pill-label-container'));
+            if (pill.textContent.includes('Flash High')) {
+                console.log("Gemini Auto-Switcher: Already set to Flash High.");
+                return;
+            }
             await randomSleep(200, 600);
             simulateHumanClick(pill);
             await randomSleep(300, 700);
