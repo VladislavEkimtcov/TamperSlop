@@ -93,16 +93,16 @@
 
             // 1. Open the model menu
             const pill = await waitForElement(() => document.querySelector('.logo-pill-label-container'));
-            if (pill.textContent.includes('Flash High')) {
-                console.log("Gemini Auto-Switcher: Already set to Flash High.");
+            if (pill.textContent.includes('Neon High')) {
+                console.log("Gemini Auto-Switcher: Already set to Neon High.");
                 return;
             }
             await randomSleep(200, 600);
             simulateHumanClick(pill);
             await randomSleep(300, 700);
 
-            // 2. Select 3.8 Flash or 3.6 Flash (whichever is available)
-            const model = await waitForElement(() => getElementByText(" 3.8 Flash ") || getElementByText(" 3.6 Flash ") || getMenuItemByLabel("3.8 Flash") || getMenuItemByLabel("3.6 Flash"));
+            // 2. Select 4 Neon
+            const model = await waitForElement(() => getElementByText("4 Neon") || getMenuItemByLabel("4 Neon"));
             simulateHumanClick(model);
             await randomSleep(400, 800);
 
