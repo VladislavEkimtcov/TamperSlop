@@ -182,7 +182,17 @@
   GM_addStyle(
     '.lumen-usd{opacity:.7;font-size:.85em;font-weight:normal;white-space:nowrap}' +
     '.lumen-usd-models{max-height:14rem;overflow:auto;font-size:.85em}' +
-    '.lumen-usd-models th:not(:first-child),.lumen-usd-models td:not(:first-child){text-align:right}');
+    '.lumen-usd-models th:not(:first-child),.lumen-usd-models td:not(:first-child){text-align:right}' +
+    '.lumen-refill-bar{position:relative}' +
+    '.lumen-refill-notch{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--bs-body-bg,#fff);opacity:.75;pointer-events:none;z-index:2;box-shadow:0 0 0 .5px rgba(0,0,0,.25)}' +
+    '.lumen-refill-scale{position:relative;height:2.8em;margin-top:2px;font-size:.7rem;line-height:1.15;font-variant-numeric:tabular-nums;user-select:none}' +
+    '.lumen-refill-tick{position:absolute;top:0;transform:translateX(-50%);text-align:center;white-space:nowrap;opacity:.75}' +
+    '.lumen-refill-tick::before{content:"";display:block;width:1px;height:4px;margin:0 auto 1px;background:currentColor;opacity:.45}' +
+    '.lumen-refill-tick.is-end{transform:translateX(-100%);text-align:right}' +
+    '.lumen-refill-tick.is-end::before{margin:0 0 1px auto}' +
+    '.lumen-refill-tick.is-done{opacity:.45}' +
+    '.lumen-refill-pct{font-size:.9em;opacity:.75}' +
+    '.lumen-refill-eta{display:block;font-weight:500}');
 
   function usdNode(tag, text, title) {
     const el = document.createElement(tag);
@@ -260,7 +270,115 @@
     }
   }
 
+  function parseUtc(s) {
+    if (!s) return NaN;
+    const t = s.trim();
+    return Date.parse(/[Zz]|[+-]\d\d:?\d\d$/.test(t) ? t : t.replace(' ', 'T') + 'Z');
+  }
+
+  function fmtEta(ms) {
+    if (ms <= 0) return 'now';
+    const sec = Math.ceil(ms / 1e3);
+    if (sec < 60) return sec + 's';
+    const min = Math.ceil(ms / 60e3);
+    if (min < 60) return min + 'm';
+    const hr = Math.floor(min / 60), remM = min % 60;
+    if (hr < 24) return remM ? hr + 'h ' + remM + 'm' : hr + 'h';
+    const d = Math.floor(hr / 24), remH = hr % 24;
+    return remH ? d + 'd ' + remH + 'h' : d + 'd';
+  }
+
+  // Quarter notches (25/50/75%) on the Coins Available bar with live timers at 25/50/75/100%.
+  function mountRefillTiers() {
+    const left = document.getElementById('coins-left');
+    const bar = document.getElementById('coins-left-bar');
+    const progress = bar && bar.parentElement;
+    if (!left || !progress) return;
+    const max = num((left.nextElementSibling ? left.nextElementSibling.textContent : '').replace('/', ''));
+    if (!(max > 0)) return;
+
+    let refillRate = NaN, refillCard = null;
+    const availCard = left.closest('.profile-stat-card');
+    for (const card of document.querySelectorAll('.profile-stat-card')) {
+      const label = card.firstElementChild && card.firstElementChild.textContent.trim();
+      if (label === 'Refill Rate') {
+        refillCard = card;
+        const val = card.querySelector('.fw-bold');
+        if (val) refillRate = num(val.textContent);
+        break;
+      }
+    }
+    if (!(refillRate > 0)) return;
+
+    progress.classList.add('lumen-refill-bar');
+    for (const pct of [25, 50, 75]) {
+      const notch = document.createElement('span');
+      notch.className = 'lumen-refill-notch';
+      notch.style.left = pct + '%';
+      progress.appendChild(notch);
+    }
+
+    const scale = document.createElement('div');
+    scale.className = 'lumen-refill-scale';
+    const tiers = [25, 50, 75, 100].map(pct => {
+      const el = document.createElement('div');
+      el.className = 'lumen-refill-tick' + (pct === 100 ? ' is-end' : '');
+      el.style.left = pct + '%';
+      const label = document.createElement('span');
+      label.className = 'lumen-refill-pct';
+      label.textContent = pct + '%';
+      const eta = document.createElement('span');
+      eta.className = 'lumen-refill-eta';
+      el.append(label, eta);
+      scale.appendChild(el);
+      return { pct, target: max * pct / 100, el, eta };
+    });
+    progress.after(scale);
+
+    const findNextMs = () => {
+      const timeEl = (refillCard && refillCard.querySelector('.local-time[data-utc]'))
+        || (availCard && availCard.querySelector('.local-time[data-utc]'));
+      return timeEl ? parseUtc(timeEl.dataset.utc) : NaN;
+    };
+
+    const HOUR_MS = 3600e3;
+    const fmtAt = ms => new Date(ms).toLocaleString([], {
+      weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+
+    const update = () => {
+      const cur = num(left.textContent);
+      if (Number.isNaN(cur)) return;
+      const now = Date.now();
+      const nextMs = findNextMs();
+      for (const t of tiers) {
+        const deficit = t.target - cur;
+        const coinsStr = t.target.toFixed(2) + ' coins';
+        if (deficit <= 1e-9) {
+          t.el.classList.add('is-done');
+          t.eta.textContent = '✓';
+          t.el.title = t.pct + '% (' + coinsStr + ') · reached';
+          continue;
+        }
+        t.el.classList.remove('is-done');
+        const etaMs = Number.isFinite(nextMs)
+          ? nextMs + (Math.max(1, Math.ceil((deficit - 1e-9) / refillRate)) - 1) * HOUR_MS
+          : now + (deficit / refillRate) * HOUR_MS;
+        const rem = Math.max(0, etaMs - now);
+        const rel = rem > 0 ? 'in ' + fmtEta(rem) : 'now';
+        t.eta.textContent = fmtEta(rem);
+        t.el.title = t.pct + '% (' + coinsStr + ') · ' + rel + ' (' + fmtAt(etaMs) + ')';
+      }
+    };
+
+    update();
+    new MutationObserver(update).observe(left, { childList: true, characterData: true, subtree: true });
+    setInterval(() => { if (!document.hidden) update(); }, 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) update(); });
+  }
+
   async function profilePage() {
+    mountRefillTiers();
     const script = [...document.scripts].find(s => !s.src && s.textContent.includes('const MODEL_ROWS'));
     const rows = script && parseModelRows(script.textContent);
     if (!rows) { console.warn('[lumen-usd] MODEL_ROWS not found on /profile'); return; }
